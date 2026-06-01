@@ -1,0 +1,22 @@
+server:
+  port: 8080
+
+spring:
+  datasource:
+    url: jdbc:h2:mem:authdb
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  h2:
+    console:
+      enabled: true          # http://localhost:8080/h2-console
+      path: /h2-console
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: true
+
+app:
+  jwt:
+    secret: 7A3F6C2D9B8E1A5F4C7D0E3B6A9F2C5D8E1B4A7D0C3F6A9E2B5C8D1F4A7E0B3
+    expiration-ms: 86400000   # 24 hours
