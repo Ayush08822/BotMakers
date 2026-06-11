@@ -43,7 +43,7 @@ npm or yarn
 The web portal will launch locally on http://localhost:3000 (or localhost:5173).
 
 
-#🔮 Roadmap & Future Enhancements
+# Roadmap & Future Enhancements
 High-Performance Caching: Implementation of caching layers (e.g., Redis or Spring Cache) to minimize database hits, drastically reduce latency, and ensure lightning-fast data access.
 
 Microservice Architecture: Evolving the backend from a monolithic structure into decentralized microservices to improve modularity, fault tolerance, and horizontal scaling.
