@@ -1,9 +1,15 @@
 export type Role = 'USER' | 'ADMIN'
 
+export interface User {
+  id?: number
+  name?: string
+  email: string
+  role: Role
+}
+
 export interface AuthResponse {
   token: string
-  type: string
-  name: string
+  name?: string
   email: string
   role: Role
 }
@@ -20,8 +26,18 @@ export interface RegisterPayload {
   role: Role
 }
 
-export interface User {
-  name: string
-  email: string
-  role: Role
+export interface Task {
+  id: number
+  title: string
+  description: string
+  status: string
+  userId: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface TaskRequestDTO {
+  title: string
+  description: string
+  status?: string
 }

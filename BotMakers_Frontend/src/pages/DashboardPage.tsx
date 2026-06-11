@@ -1,157 +1,335 @@
-import { useQuery } from 'react-query'
-import Navbar from '../components/layout/Navbar'
-import { fetchPublicData, fetchUserData, fetchAdminData } from '../api/auth'
-import { useAuthStore } from '../store/authStore'
-
-interface ApiSection {
-  title: string
-  endpoint: string
-  badge: string
-  badgeClass: string
-  queryKey: string
-  fetchFn: () => Promise<any>
-  allowed: boolean
-  description: string
-}
-
-const DataCard = ({ section }: { section: ApiSection }) => {
-  const { data, isLoading, error, refetch } = useQuery(
-    section.queryKey,
-    section.fetchFn,
-    { enabled: section.allowed, retry: false }
-  )
-
-  return (
-    <div className="section-card">
-      {/* Header */}
-      <div className="flex items-start justify-between mb-4">
-        <div>
-          <h3 className="font-display font-semibold text-white text-base">{section.title}</h3>
-          <code className="text-xs font-mono text-slate-500 mt-0.5 block">{section.endpoint}</code>
-        </div>
-        <span className={section.badgeClass}>{section.badge}</span>
-      </div>
-
-      <p className="text-xs text-slate-500 mb-4 font-body">{section.description}</p>
-
-      {/* Response area */}
-      <div className="bg-ink rounded-lg p-4 min-h-[80px] border border-white/5">
-        {!section.allowed ? (
-          <div className="flex items-center gap-2 text-slate-600 text-xs font-mono">
-            <span className="text-danger">✕</span>
-            Access denied — insufficient role
-          </div>
-        ) : isLoading ? (
-          <div className="flex items-center gap-2 text-slate-500 text-xs font-mono">
-            <span className="w-3 h-3 border border-accent/40 border-t-accent rounded-full animate-spin" />
-            Fetching...
-          </div>
-        ) : error ? (
-          <div className="text-danger text-xs font-mono">
-            ⚠ {(error as any)?.response?.data?.error ?? 'Request failed'}
-          </div>
-        ) : (
-          <pre className="text-accent text-xs font-mono whitespace-pre-wrap leading-relaxed">
-            {JSON.stringify(data, null, 2)}
-          </pre>
-        )}
-      </div>
-
-      {section.allowed && (
-        <button
-          onClick={() => refetch()}
-          className="mt-3 text-xs font-mono text-slate-500 hover:text-accent transition-colors"
-        >
-          ↺ refetch
-        </button>
-      )}
-    </div>
-  )
-}
+import { useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "react-query";
+import Navbar from "../components/layout/Navbar";
+import {
+  fetchTasks,
+  fetchTaskById,
+  createTask,
+  updateTask,
+  deleteTask,
+} from "../api/tasks";
+import { useAuthStore } from "../store/authStore";
+import type { Task } from "../types/index";
 
 const DashboardPage = () => {
-  const { user } = useAuthStore()
-  const isAdmin = user?.role === 'ADMIN'
+  const { user } = useAuthStore();
+  const isAdmin = user?.role === "ADMIN";
+  const queryClient = useQueryClient();
 
-  const sections: ApiSection[] = [
-    {
-      title: 'Public Endpoint',
-      endpoint: 'GET /api/public',
-      badge: '● ALL',
-      badgeClass: 'badge bg-slate-700/50 text-slate-300 border border-white/10',
-      queryKey: 'public',
-      fetchFn: fetchPublicData,
-      allowed: true,
-      description: 'No authentication required. Anyone can access this endpoint.',
+  // Form State for Create & Edit
+  const [editingTaskId, setEditingTaskId] = useState<number | null>(null);
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [status, setStatus] = useState("PENDING");
+  const [errorMsg, setErrorMsg] = useState("");
+
+  // View Modal State
+  const [viewingTaskId, setViewingTaskId] = useState<number | null>(null);
+
+  // -- Queries --
+  const { data: tasks, isLoading: tasksLoading } = useQuery(
+    "tasks",
+    fetchTasks,
+  );
+
+  // Query for individual task (only runs when viewingTaskId is not null)
+  const { data: singleTask, isLoading: singleTaskLoading } = useQuery(
+    ["task", viewingTaskId],
+    () => fetchTaskById(viewingTaskId!),
+    { enabled: !!viewingTaskId },
+  );
+
+  // -- Mutations --
+  const createMutation = useMutation(createTask, {
+    onSuccess: () => {
+      queryClient.invalidateQueries("tasks");
+      resetForm();
     },
+    onError: (err: any) =>
+      setErrorMsg(err.response?.data?.title || "Failed to create task"),
+  });
+
+  const updateMutation = useMutation(
+    (params: { id: number; payload: any }) =>
+      updateTask(params.id, params.payload),
     {
-      title: 'User Endpoint',
-      endpoint: 'GET /api/user',
-      badge: '◈ USER',
-      badgeClass: 'badge-user',
-      queryKey: 'user',
-      fetchFn: fetchUserData,
-      allowed: true,
-      description: 'Requires a valid JWT token. Accessible by USER and ADMIN roles.',
+      onSuccess: () => {
+        queryClient.invalidateQueries("tasks");
+        resetForm();
+      },
+      onError: (err: any) =>
+        setErrorMsg(err.response?.data?.title || "Failed to update task"),
     },
-    {
-      title: 'Admin Endpoint',
-      endpoint: 'GET /api/admin',
-      badge: '⬡ ADMIN',
-      badgeClass: 'badge-admin',
-      queryKey: 'admin',
-      fetchFn: fetchAdminData,
-      allowed: isAdmin,
-      description: 'Restricted to ADMIN role only. Returns 403 for USER role.',
-    },
-  ]
+  );
+
+  const deleteMutation = useMutation(deleteTask, {
+    onSuccess: () => queryClient.invalidateQueries("tasks"),
+  });
+
+  // -- Handlers --
+  const resetForm = () => {
+    setEditingTaskId(null);
+    setTitle("");
+    setDescription("");
+    setStatus("PENDING");
+    setErrorMsg("");
+  };
+
+  const handleEditClick = (task: Task) => {
+    setEditingTaskId(task.id);
+    setTitle(task.title);
+    setDescription(task.description);
+    setStatus(task.status);
+    setErrorMsg("");
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!title.trim()) {
+      setErrorMsg("Title is required");
+      return;
+    }
+
+    if (editingTaskId) {
+      updateMutation.mutate({
+        id: editingTaskId,
+        payload: { title, description, status },
+      });
+    } else {
+      createMutation.mutate({ title, description, status: "PENDING" });
+    }
+  };
 
   return (
-    <div className="min-h-screen bg-ink">
+    <div className="min-h-screen bg-slate-50">
       <Navbar />
 
       <main className="max-w-5xl mx-auto px-6 py-10">
-        {/* Welcome header */}
-        <div className="mb-10 animate-fade-up">
-          <div className="flex items-center gap-3 mb-2">
-            <h1 className="font-display font-bold text-3xl text-white">
-              Dashboard
-            </h1>
-            <span className={isAdmin ? 'badge-admin' : 'badge-user'}>
-              {isAdmin ? '⬡ ADMIN' : '◈ USER'}
-            </span>
-          </div>
-          <p className="text-slate-500 font-body text-sm">
-            Logged in as <span className="text-slate-300">{user?.email}</span> · Testing RBAC endpoints below
+        <div className="mb-8 animate-fade-up">
+          <h1 className="font-display font-bold text-3xl text-slate-900">
+            Task Dashboard
+          </h1>
+          <p className="text-slate-500 font-body text-sm mt-1">
+            Manage your pending operations.
           </p>
         </div>
 
-        {/* Token display */}
-        <div className="mb-8 p-4 bg-ink-soft border border-white/8 rounded-xl animate-fade-up-delay">
-          <p className="text-xs font-mono text-slate-500 mb-2 uppercase tracking-wider">JWT Token (stored in localStorage)</p>
-          <code className="text-xs font-mono text-accent/70 break-all leading-relaxed">
-            {localStorage.getItem('jwt_token')}
-          </code>
-        </div>
+        <div className="grid md:grid-cols-3 gap-8">
+          {/* LEFT COLUMN: Create / Edit Form */}
+          <div className="md:col-span-1">
+            <div className="card sticky top-24">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-lg font-bold text-slate-800">
+                  {editingTaskId ? "Edit Task" : "New Task"}
+                </h2>
+                {editingTaskId && (
+                  <button
+                    onClick={resetForm}
+                    className="text-xs text-slate-400 hover:text-slate-600 font-bold"
+                  >
+                    Cancel
+                  </button>
+                )}
+              </div>
 
-        {/* API Sections */}
-        <div className="grid gap-5 md:grid-cols-1">
-          {sections.map((s) => (
-            <DataCard key={s.queryKey} section={s} />
-          ))}
-        </div>
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">
+                    Title
+                  </label>
+                  <input
+                    type="text"
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    className="input-field"
+                    placeholder="E.g., Design API"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">
+                    Description
+                  </label>
+                  <textarea
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    className="input-field min-h-[100px] resize-y"
+                    placeholder="Add details..."
+                  />
+                </div>
 
-        {/* Role note */}
-        {!isAdmin && (
-          <div className="mt-6 p-4 bg-amber-500/5 border border-amber-500/15 rounded-xl animate-fade-up-delay2">
-            <p className="text-xs font-mono text-amber-400/70">
-              ℹ You are logged in as <strong>USER</strong>. Register with ADMIN role to unlock the admin endpoint.
-            </p>
+                {/* Show status dropdown only when editing */}
+                {editingTaskId && (
+                  <div>
+                    <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">
+                      Status
+                    </label>
+                    <select
+                      value={status}
+                      onChange={(e) => setStatus(e.target.value)}
+                      className="input-field"
+                    >
+                      <option value="PENDING">Pending</option>
+                      <option value="IN_PROGRESS">In Progress</option>
+                      <option value="COMPLETED">Completed</option>
+                    </select>
+                  </div>
+                )}
+
+                {errorMsg && (
+                  <p className="text-xs text-red-500 font-medium">{errorMsg}</p>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={
+                    createMutation.isLoading || updateMutation.isLoading
+                  }
+                  className="btn-primary"
+                >
+                  {editingTaskId ? "Update Task" : "Add Task"}
+                </button>
+              </form>
+            </div>
           </div>
-        )}
-      </main>
-    </div>
-  )
-}
 
-export default DashboardPage
+          {/* RIGHT COLUMN: Task List */}
+          <div className="md:col-span-2 space-y-4">
+            <h2 className="text-lg font-bold text-slate-800">Your Tasks</h2>
+
+            {tasksLoading ? (
+              <p className="text-slate-500 text-sm">Loading tasks...</p>
+            ) : tasks?.length === 0 ? (
+              <div className="p-8 border-2 border-dashed border-slate-200 rounded-xl text-center">
+                <p className="text-slate-500 font-medium">
+                  No tasks found. Create one to get started.
+                </p>
+              </div>
+            ) : (
+              tasks?.map((task) => (
+                <div
+                  key={task.id}
+                  className="section-card flex justify-between items-start"
+                >
+                  <div>
+                    <div className="flex items-center gap-3 mb-1">
+                      <h3 className="font-bold text-slate-900 text-lg">
+                        {task.title}
+                      </h3>
+                      <span
+                        className={`badge ${
+                          task.status === "COMPLETED"
+                            ? "bg-green-100 text-green-700 border-green-200"
+                            : task.status === "IN_PROGRESS"
+                              ? "bg-amber-100 text-amber-700 border-amber-200"
+                              : "bg-blue-50 text-blue-600 border-blue-200"
+                        }`}
+                      >
+                        {task.status}
+                      </span>
+                    </div>
+                    <p className="text-sm text-slate-600 mb-4">
+                      {task.description}
+                    </p>
+
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setViewingTaskId(task.id)}
+                        className="text-xs px-3 py-1.5 rounded bg-slate-100 text-slate-700 font-bold hover:bg-slate-200 transition-colors"
+                      >
+                        View Details
+                      </button>
+                      <button
+                        onClick={() => handleEditClick(task)}
+                        className="text-xs px-3 py-1.5 rounded bg-indigo-50 text-indigo-700 font-bold hover:bg-indigo-100 transition-colors"
+                      >
+                        Edit
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* RBAC: Only Admin can delete */}
+                  {isAdmin && (
+                    <button
+                      onClick={() => deleteMutation.mutate(task.id)}
+                      disabled={deleteMutation.isLoading}
+                      className="text-xs px-3 py-1.5 rounded bg-red-50 text-red-600 font-bold hover:bg-red-100 transition-colors"
+                    >
+                      Delete
+                    </button>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </main>
+
+      {/* VIEW TASK MODAL */}
+      {viewingTaskId && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-lg shadow-2xl relative animate-fade-up">
+            <button
+              onClick={() => setViewingTaskId(null)}
+              className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 font-bold"
+            >
+              ✕
+            </button>
+
+            <h2 className="text-xl font-bold text-slate-900 mb-4 border-b border-slate-100 pb-2">
+              Task Details (GET /api/v1/tasks/{viewingTaskId})
+            </h2>
+
+            {singleTaskLoading ? (
+              <p className="text-slate-500 text-sm py-4">
+                Fetching data from API...
+              </p>
+            ) : singleTask ? (
+              <div className="space-y-4 text-sm font-mono">
+                <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
+                  <p>
+                    <span className="text-slate-400 font-bold">ID:</span>{" "}
+                    <span className="text-slate-800">{singleTask.id}</span>
+                  </p>
+                  <p className="mt-2">
+                    <span className="text-slate-400 font-bold">TITLE:</span>{" "}
+                    <span className="text-indigo-600">{singleTask.title}</span>
+                  </p>
+                  <p className="mt-2">
+                    <span className="text-slate-400 font-bold">DESC:</span>{" "}
+                    <span className="text-slate-800">
+                      {singleTask.description}
+                    </span>
+                  </p>
+                  <p className="mt-2">
+                    <span className="text-slate-400 font-bold">STATUS:</span>{" "}
+                    <span className="text-slate-800">{singleTask.status}</span>
+                  </p>
+                  <p className="mt-2">
+                    <span className="text-slate-400 font-bold">USER_ID:</span>{" "}
+                    <span className="text-slate-800">{singleTask.userId}</span>
+                  </p>
+                  <p className="mt-2">
+                    <span className="text-slate-400 font-bold">CREATED:</span>{" "}
+                    <span className="text-slate-800">
+                      {new Date(singleTask.createdAt).toLocaleString()}
+                    </span>
+                  </p>
+                  <p className="mt-2">
+                    <span className="text-slate-400 font-bold">UPDATED:</span>{" "}
+                    <span className="text-slate-800">
+                      {new Date(singleTask.updatedAt).toLocaleString()}
+                    </span>
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <p className="text-red-500 py-4">Error loading task details.</p>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default DashboardPage;

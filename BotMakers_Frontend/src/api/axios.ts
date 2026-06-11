@@ -2,7 +2,8 @@ import axios from 'axios'
 import { getStoredToken } from '../store/authStore'
 
 const api = axios.create({
-  baseURL: '/api',
+  // Point to your Spring Boot backend URL
+  baseURL: 'http://localhost:8080/api', 
   headers: { 'Content-Type': 'application/json' },
 })
 

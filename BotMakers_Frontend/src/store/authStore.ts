@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { User, Role } from '../types'
+import type { User } from '../types'
 
 const TOKEN_KEY = 'jwt_token'
 const USER_KEY  = 'jwt_user'
@@ -12,7 +12,6 @@ interface AuthState {
   logout: () => void
 }
 
-// Rehydrate from localStorage on app load
 const storedToken = localStorage.getItem(TOKEN_KEY)
 const storedUser  = (() => {
   try { return JSON.parse(localStorage.getItem(USER_KEY) ?? 'null') } catch { return null }
